@@ -9,5 +9,20 @@ if(updater.checkForUpdates() == Update.UPDATE_AVAILABLE){
 }
 ~~~~
 You can be more advanced with this, for example rechecking for updates in a command using ``updater.checkForUpdates(true)``, and updating in commands and listeners aswell using ``updater.update()``. Feel free to explore the methods.
-### ALib
-This updater is a part of ALib, but was extracted for sake of simplicity. If you use this updater you need to make a way to disable it. Also, please credit me if you use it.
+## Maven
+For those who prefer Maven, use this snippet:
+```
+...
+<repository>
+	<id>arsens-repo</id>
+	<url>http://repo-arsenarsen.rhcloud.com/content/repositories/snapshots/</url>
+</repository>
+...
+<dependency>
+	<groupId>com.arsenarsen</groupId>
+	<artifactId>updater</artifactId>
+	<version>1.0.0-R0.2-SNAPSHOT</version>
+</dependency>'
+```
+
+Good luck and happy updating!
