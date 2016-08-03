@@ -223,7 +223,7 @@ public class Updater {
 							JSONObject latest = (JSONObject) json.get(json.size() - counter);
 							futuremd5 = (String) latest.get("md5");
 							String channel = (String) latest.get("releaseType");
-							if (alloweledChannels.contains(Channel.valueOf(channel))) {
+							if (alloweledChannels.contains(Channel.matchChannel(channel.toUpperCase()))) {
 								if (futuremd5.equalsIgnoreCase(currentmd5)) {
 									lastCheck = Update.NO_UPDATE;
 								} else {
@@ -313,8 +313,26 @@ public class Updater {
 			this.channel = channel;
 		}
 
+		/**
+		 * Gets the channel value
+		 * @return the channel value
+		 */
 		public String getChannel() {
 			return channel;
+		}
+		
+		/**
+		 * Returns channel whose channel value matches the given string
+		 * @param channel The channel value
+		 * @return The Channel constant
+		 */
+		public static Channel matchChannel(String channel) {
+			for(Channel c : values()) {
+				if(c.channel.equalsIgnoreCase(channel)) {
+					return c;
+				}
+			}
+			return null;
 		}
 	}
 	
