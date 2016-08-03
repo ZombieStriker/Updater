@@ -13,17 +13,20 @@ import java.net.URL;
 import java.nio.charset.MalformedInputException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.logging.Level;
 
-import org.apache.commons.io.IOUtils;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
+
+import com.google.common.io.ByteStreams;
 
 /**
  * Checks and auto updates a plugin<br>
@@ -39,6 +42,7 @@ public class Updater {
 	private static final String QUERY = "/servermods/files?projectIds=";
 	private static final String AGENT = "Updater by ArsenArsen";
 	private static final File BACKUP_DIR = new File("backup" + File.separator);
+	public final static char[] HEX_CHAR_ARRAY = "0123456789ABCDEF".toCharArray();
 
 	private int id = -1;
 
@@ -160,7 +164,7 @@ public class Updater {
 			pluginFile.delete();
 			InputStream in = new FileInputStream(downloadTo);
 			OutputStream out = new FileOutputStream(pluginFile);
-			IOUtils.copy(in, out);
+			ByteStreams.copy(in, out);
 			in.close();
 			out.close();
 			return true;
@@ -320,21 +324,27 @@ public class Updater {
 	 * @return The MD5 hex or null, if the operation failed
 	 */
 	public String fileHash(File file) {
-		String md5 = null;
-		FileInputStream fis = null;
+		FileInputStream is;
 		try {
-			fis = new FileInputStream(file);
-			md5 = org.apache.commons.codec.digest.DigestUtils.md5Hex(fis);
-		} catch (IOException e) {
-			p.getLogger().log(Level.SEVERE, "Could not calculate MD5 hash for " + file.getName(), e);
-		} finally {
-			if(fis != null) {
-				try {
-					fis.close();
-				} catch (IOException e) {
-				}
+			is = new FileInputStream(file);
+			MessageDigest md = MessageDigest.getInstance("MD5");
+			byte[] bytes = new byte[2048];
+			int numBytes;
+			while ((numBytes = is.read(bytes)) != -1) {
+				md.update(bytes, 0, numBytes);
 			}
+			byte[] digest = md.digest();
+			char[] hexChars = new char[digest.length * 2];
+		    for ( int j = 0; j < digest.length; j++ ) {
+		        int v = digest[j] & 0xFF;
+		        hexChars[j * 2] = HEX_CHAR_ARRAY[v >>> 4];
+		        hexChars[j * 2 + 1] = HEX_CHAR_ARRAY[v & 0x0F];
+		    }
+		    is.close();
+		    return new String(hexChars);
+		} catch(IOException | NoSuchAlgorithmException e) {
+			p.getLogger().log(Level.SEVERE, "Could not digest " + file.getPath(), e);
+			return null;
 		}
-		return md5;
 	}
 }
