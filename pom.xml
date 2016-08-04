@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.arsenarsen</groupId>
 	<artifactId>updater</artifactId>
-	<version>1.0.0-R0.2-SNAPSHOT</version>
+	<version>1.1.0-R0.1-SNAPSHOT</version>
 	<name>Updater</name>
 	<description>This is my own special updater, made for sake of having it.</description>
 	<distributionManagement>
@@ -62,6 +62,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-source-plugin</artifactId>
+				<version>3.0.1</version>
 				<executions>
 					<execution>
 						<id>attach-sources</id>
@@ -74,6 +75,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-javadoc-plugin</artifactId>
+				<version>2.10.4</version>
 				<executions>
 					<execution>
 						<id>attach-javadocs</id>
@@ -85,7 +87,7 @@
 			</plugin>
 			<plugin>
 				<artifactId>maven-deploy-plugin</artifactId>
-				<version>2.8.1</version>
+				<version>2.8.2</version>
 				<executions>
 					<execution>
 						<id>default-deploy</id>
@@ -95,11 +97,6 @@
 						</goals>
 					</execution>
 				</executions>
-			</plugin>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-deploy-plugin</artifactId>
-				<version>2.8.2</version>
 				<configuration>
 					<skip>true</skip>
 				</configuration>

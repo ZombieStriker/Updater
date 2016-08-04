@@ -15,9 +15,14 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.logging.Level;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipException;
+import java.util.zip.ZipFile;
 
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -42,17 +47,20 @@ public class Updater {
 	private static final String QUERY = "/servermods/files?projectIds=";
 	private static final String AGENT = "Updater by ArsenArsen";
 	private static final File BACKUP_DIR = new File("backup" + File.separator);
-	public final static char[] HEX_CHAR_ARRAY = "0123456789ABCDEF".toCharArray();
+	public final static char[] HEX_CHAR_ARRAY = "0123456789abcdef".toCharArray();
 
 	private int id = -1;
 
 	private Plugin p;
-	private Update lastCheck = null;
+	private UpdateAvailability lastCheck = null;
+	private UpdateResult lastUpdate = UpdateResult.NOT_UPDATED;
 	private File pluginFile;
 	private String downloadURL = null;
-	private Status lastUpdate = Status.NOT_UPDATED;
 	private String futuremd5;
+	private String downloadName;
 	private List<Channel> alloweledChannels = Arrays.asList(Channel.values());
+	private List<UpdateCallback> callbacks = new ArrayList<>();
+	private SyncCallbackCaller caller = new SyncCallbackCaller();
 
 	/**
 	 * Makes the updater for a plugin
@@ -80,6 +88,45 @@ public class Updater {
 	}
 
 	/**
+	 * Makes the updater for a plugin with an ID
+	 * 
+	 * @param p
+	 *            The plugin
+	 * @param id
+	 *            Plugin ID
+	 * @param download
+	 *            Set to true if your plugin needs to be immediately downloaded
+	 */
+	public Updater(Plugin p, int id, boolean download) {
+		this(p);
+		setID(id);
+		if (download && (checkForUpdates() == UpdateAvailability.UPDATE_AVAILABLE)) {
+			update();
+		}
+	}
+
+	/**
+	 * Makes the updater for a plugin with an ID
+	 * 
+	 * @param p
+	 *            The plugin
+	 * @param id
+	 *            Plugin ID
+	 * @param download
+	 *            Set to true if your plugin needs to be immediately downloaded
+	 * @param callbacks
+	 *            All update callbacks you need
+	 */
+	public Updater(Plugin p, int id, boolean download, UpdateCallback... callbacks) {
+		this(p);
+		setID(id);
+		this.callbacks.addAll(Arrays.asList(callbacks));
+		if (download && (checkForUpdates() == UpdateAvailability.UPDATE_AVAILABLE)) {
+			update();
+		}
+	}
+
+	/**
 	 * Gets the plugin ID
 	 * 
 	 * @return the plugin ID
@@ -99,6 +146,16 @@ public class Updater {
 	}
 
 	/**
+	 * Adds a new callback
+	 * 
+	 * @param callback
+	 *            Callback to register
+	 */
+	public void registerCallback(UpdateCallback callback) {
+		callbacks.add(callback);
+	}
+
+	/**
 	 * Attempts a update
 	 * 
 	 * @throws IllegalStateException
@@ -108,35 +165,37 @@ public class Updater {
 		if (id == -1) {
 			throw new IllegalStateException("Plugin ID is not set!");
 		}
-		
-		if(lastCheck == null) {
+
+		if (lastCheck == null) {
 			checkForUpdates();
 		}
-		
+
 		if (!BACKUP_DIR.exists() || !BACKUP_DIR.isDirectory()) {
 			BACKUP_DIR.mkdir();
 		}
-
-		if(lastCheck == Update.UPDATE_AVAILABLE) {
+		final Updater updater = this;
+		if (lastCheck == UpdateAvailability.UPDATE_AVAILABLE) {
 			new BukkitRunnable() {
+
 				@Override
 				public void run() {
 					p.getLogger().info("Starting update of " + p.getName());
-					lastUpdate = download() ? Status.UPDATE_SUCCEEDED : Status.UPDATE_FAILED;
-					p.getLogger().log(Level.INFO, "Success!");
+					lastUpdate = download();
+					p.getLogger().log(Level.INFO, "Update done! Result: " + lastUpdate);
+					caller.call(callbacks, lastUpdate, updater);
 				}
 			}.runTaskAsynchronously(p);
 		}
 	}
 
-	private boolean download() {
+	private UpdateResult download() {
 		try {
 			Files.copy(pluginFile.toPath(),
 					new File(BACKUP_DIR, "backup-" + System.currentTimeMillis() + "-" + p.getName() + ".jar").toPath(),
 					StandardCopyOption.REPLACE_EXISTING);
 			pluginFile.delete();
-			final File downloadTo = new File(pluginFile.getAbsolutePath().replace("plugins",
-					"plugins" + File.separator + "ALib" + File.separator + "Updater"));
+			final File downloadTo = new File(pluginFile.getParentFile().getAbsolutePath() + "Updater" + File.separator,
+					downloadName);
 			downloadTo.getParentFile().mkdirs();
 			downloadTo.delete();
 			Files.copy(new URL(downloadURL).openStream(), downloadTo.toPath());
@@ -145,7 +204,7 @@ public class Updater {
 				try {
 					List<String> lines = Files.readAllLines(downloadTo.toPath());
 					if (lines.get(0) != null
-							& lines.get(0).equals("<html><head><title>Object moved</title></head><body>")) {
+							&& lines.get(0).equals("<html><head><title>Object moved</title></head><body>")) {
 						for (String line : lines) {
 							content += line;
 						}
@@ -157,20 +216,64 @@ public class Updater {
 
 					}
 				} catch (MalformedInputException e) {
-					return false;
 				}
 			}
-			pluginFile.setWritable(true, false);
-			pluginFile.delete();
-			InputStream in = new FileInputStream(downloadTo);
-			OutputStream out = new FileOutputStream(pluginFile);
-			ByteStreams.copy(in, out);
-			in.close();
-			out.close();
-			return true;
+			if (downloadTo.getName().endsWith(".jar")) {
+				pluginFile.setWritable(true, false);
+				pluginFile.delete();
+				InputStream in = new FileInputStream(downloadTo);
+				OutputStream out = new FileOutputStream(pluginFile);
+				p.getLogger().info("Update done! Downloaded " + ByteStreams.copy(in, out) + " bytes!");
+				in.close();
+				out.close();
+				return UpdateResult.UPDATE_SUCCEEDED;
+			} else
+				return unzip(downloadTo);
 		} catch (IOException e) {
 			p.getLogger().log(Level.SEVERE, "Couldn't download update for " + p.getName(), e);
-			return false;
+			return UpdateResult.IOERROR;
+		}
+	}
+
+	private UpdateResult unzip(File download) {
+		ZipFile zipFile = null;
+		try {
+			zipFile = new ZipFile(download);
+			Enumeration<? extends ZipEntry> entries = zipFile.entries();
+			ZipEntry entry;
+			while ((entry = entries.nextElement()) != null) {
+				pluginFile.setWritable(true, false);
+				pluginFile.delete();
+				File target = new File(pluginFile.getParentFile(), entry.getName());
+				if (!entry.isDirectory()) {
+					target.getParentFile().mkdirs();
+					InputStream zipStream = zipFile.getInputStream(entry);
+					OutputStream fileStream = new FileOutputStream(target);
+					ByteStreams.copy(zipStream, fileStream);
+					try {
+						zipStream.close();
+						fileStream.close();
+					} catch (IOException e) {
+					}
+				}
+			}
+			return UpdateResult.UPDATE_SUCCEEDED;
+		} catch (IOException e) {
+			if (e instanceof ZipException) {
+				p.getLogger().log(Level.SEVERE, "Could not unzip downloaded file!", e);
+				return UpdateResult.UNKNOWN_FILE_TYPE;
+			} else {
+				p.getLogger().log(Level.SEVERE,
+						"An IOException occured while trying to update %s!".replace("%s", p.getName()), e);
+				return UpdateResult.IOERROR;
+			}
+		} finally {
+			if (zipFile != null) {
+				try {
+					zipFile.close();
+				} catch (IOException e) {
+				}
+			}
 		}
 	}
 
@@ -183,7 +286,7 @@ public class Updater {
 	 * @throws IllegalStateException
 	 *             If the plugin ID is not set
 	 */
-	public Update checkForUpdates(boolean force) {
+	public UpdateAvailability checkForUpdates(boolean force) {
 		if (id == -1) {
 			throw new IllegalStateException("Plugin ID is not set!");
 		}
@@ -214,9 +317,9 @@ public class Updater {
 						while (!done) {
 							JSONParser parser = new JSONParser();
 							JSONArray json = (JSONArray) parser.parse(response);
-							if(json.size() - counter < 0) {
+							if (json.size() - counter < 0) {
 								done = true;
-								lastCheck = Update.NO_UPDATE;
+								lastCheck = UpdateAvailability.NO_UPDATE;
 								done = true;
 								break;
 							}
@@ -225,23 +328,25 @@ public class Updater {
 							String channel = (String) latest.get("releaseType");
 							if (alloweledChannels.contains(Channel.matchChannel(channel.toUpperCase()))) {
 								if (futuremd5.equalsIgnoreCase(currentmd5)) {
-									lastCheck = Update.NO_UPDATE;
+									lastCheck = UpdateAvailability.NO_UPDATE;
 								} else {
-									lastCheck = Update.UPDATE_AVAILABLE;
+									lastCheck = UpdateAvailability.UPDATE_AVAILABLE;
 									downloadURL = (String) latest.get("downloadUrl");
+									downloadName = (String) latest.get("fileName");
 								}
 								done = true;
-							} else counter++;
+							} else
+								counter++;
 						}
 					} catch (ParseException e) {
 						p.getLogger().log(Level.SEVERE, "Could not parse API Response for " + target, e);
-						lastCheck = Update.CANT_UNDERSTAND;
+						lastCheck = UpdateAvailability.CANT_UNDERSTAND;
 					}
 				} else
-					lastCheck = Update.SM_UNREACHABLE;
+					lastCheck = UpdateAvailability.SM_UNREACHABLE;
 			} catch (IOException e) {
 				p.getLogger().log(Level.SEVERE, "Could not check for updates for plugin " + p.getName(), e);
-				lastCheck = Update.SM_UNREACHABLE;
+				lastCheck = UpdateAvailability.SM_UNREACHABLE;
 			}
 		}
 
@@ -256,7 +361,7 @@ public class Updater {
 	 * @throws IllegalStateException
 	 *             If the plugin ID is not set
 	 */
-	public Update checkForUpdates() {
+	public UpdateAvailability checkForUpdates() {
 		return checkForUpdates(false);
 	}
 
@@ -265,13 +370,15 @@ public class Updater {
 	 * 
 	 * @return The update state
 	 */
-	public Status isUpdated() {
+	public UpdateResult isUpdated() {
 		return lastUpdate;
 	}
 
 	/**
 	 * Sets alloweled channels, AKA release types
-	 * @param channels The alloweled channels
+	 * 
+	 * @param channels
+	 *            The alloweled channels
 	 */
 	public void setChannels(Channel... channels) {
 		alloweledChannels.clear();
@@ -284,8 +391,8 @@ public class Updater {
 	 * @author Arsen
 	 *
 	 */
-	public static enum Status {
-		UPDATE_SUCCEEDED, UPDATE_FAILED, NOT_UPDATED;
+	public static enum UpdateResult {
+		UPDATE_SUCCEEDED, UPDATE_FAILED, NOT_UPDATED, UNKNOWN_FILE_TYPE, IOERROR;
 	}
 
 	/**
@@ -294,7 +401,7 @@ public class Updater {
 	 * @author Arsen
 	 *
 	 */
-	public static enum Update {
+	public static enum UpdateAvailability {
 		UPDATE_AVAILABLE, NO_UPDATE, SM_UNREACHABLE, CANT_UNDERSTAND;
 	}
 
@@ -315,30 +422,35 @@ public class Updater {
 
 		/**
 		 * Gets the channel value
+		 * 
 		 * @return the channel value
 		 */
 		public String getChannel() {
 			return channel;
 		}
-		
+
 		/**
 		 * Returns channel whose channel value matches the given string
-		 * @param channel The channel value
+		 * 
+		 * @param channel
+		 *            The channel value
 		 * @return The Channel constant
 		 */
 		public static Channel matchChannel(String channel) {
-			for(Channel c : values()) {
-				if(c.channel.equalsIgnoreCase(channel)) {
+			for (Channel c : values()) {
+				if (c.channel.equalsIgnoreCase(channel)) {
 					return c;
 				}
 			}
 			return null;
 		}
 	}
-	
+
 	/**
 	 * Calculates files MD5 hash
-	 * @param file The file to digest
+	 * 
+	 * @param file
+	 *            The file to digest
 	 * @return The MD5 hex or null, if the operation failed
 	 */
 	public String fileHash(File file) {
@@ -353,16 +465,47 @@ public class Updater {
 			}
 			byte[] digest = md.digest();
 			char[] hexChars = new char[digest.length * 2];
-		    for ( int j = 0; j < digest.length; j++ ) {
-		        int v = digest[j] & 0xFF;
-		        hexChars[j * 2] = HEX_CHAR_ARRAY[v >>> 4];
-		        hexChars[j * 2 + 1] = HEX_CHAR_ARRAY[v & 0x0F];
-		    }
-		    is.close();
-		    return new String(hexChars);
-		} catch(IOException | NoSuchAlgorithmException e) {
+			for (int j = 0; j < digest.length; j++) {
+				int v = digest[j] & 0xFF;
+				hexChars[j * 2] = HEX_CHAR_ARRAY[v >>> 4];
+				hexChars[j * 2 + 1] = HEX_CHAR_ARRAY[v & 0x0F];
+			}
+			is.close();
+			return new String(hexChars);
+		} catch (IOException | NoSuchAlgorithmException e) {
 			p.getLogger().log(Level.SEVERE, "Could not digest " + file.getPath(), e);
 			return null;
 		}
+	}
+
+	/**
+	 * Called right after update is done
+	 * 
+	 * @author Arsen
+	 *
+	 */
+	public interface UpdateCallback {
+
+		public void updated(UpdateResult updateResult, Updater updater);
+	}
+
+	private class SyncCallbackCaller extends BukkitRunnable{
+		private List<UpdateCallback> callbacks; 
+		private UpdateResult updateResult;
+		private Updater updater;
+		
+		public void run() {
+			for (UpdateCallback callback : callbacks) {
+				callback.updated(updateResult, updater);
+			}
+		}
+		
+		public void call(List<UpdateCallback> callbacks, UpdateResult updateResult, Updater updater) {
+			this.callbacks = callbacks;
+			this.updateResult = updateResult;
+			this.updater = updater;
+			runTask(updater.p);
+		}
+		
 	}
 }
