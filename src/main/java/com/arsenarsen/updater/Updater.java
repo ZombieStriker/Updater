@@ -1,29 +1,6 @@
 package com.arsenarsen.updater;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.MalformedInputException;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Enumeration;
-import java.util.List;
-import java.util.logging.Level;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipException;
-import java.util.zip.ZipFile;
-
+import com.google.common.io.ByteStreams;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.json.simple.JSONArray;
@@ -31,23 +8,39 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
-import com.google.common.io.ByteStreams;
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.MalformedInputException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.logging.Level;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipException;
+import java.util.zip.ZipFile;
 
 /**
  * Checks and auto updates a plugin<br>
  * <br>
  * <b>You must have a option in your config to disable the updater!</b>
- * 
- * @author Arsen
  *
+ * @author Arsen
  */
 public class Updater {
 
 	private static final String HOST = "https://api.curseforge.com";
 	private static final String QUERY = "/servermods/files?projectIds=";
 	private static final String AGENT = "Updater by ArsenArsen";
-	private static final File BACKUP_DIR = new File("backup" + File.separator);
-	public final static char[] HEX_CHAR_ARRAY = "0123456789abcdef".toCharArray();
+	private static final File WORKING_DIR = new File("plugins" + File.separator + "Updater" + File.separator);
+	private static final File BACKUP_DIR = new File(WORKING_DIR, "backups" + File.separator);
+	private static final File LOG_FILE = new File(WORKING_DIR, "updater.log");
+	private static final char[] HEX_CHAR_ARRAY = "0123456789abcdef".toCharArray();
 
 	private int id = -1;
 
@@ -65,22 +58,29 @@ public class Updater {
 
 	/**
 	 * Makes the updater for a plugin
-	 * 
-	 * @param p
-	 *            Plugin to update
+	 *
+	 * @param p Plugin to update
 	 */
 	public Updater(Plugin p) {
 		this.p = p;
 		pluginFile = new File(p.getClass().getProtectionDomain().getCodeSource().getLocation().getPath());
+		if (!LOG_FILE.exists()) {
+			try {
+				LOG_FILE.getParentFile().mkdirs();
+				LOG_FILE.createNewFile();
+				log("Created log file!");
+			} catch (IOException e) {
+				p.getLogger().log(Level.SEVERE, "Could not create " + LOG_FILE.getName() + "!", e);
+			}
+
+		}
 	}
 
 	/**
 	 * Makes the updater for a plugin with an ID
-	 * 
-	 * @param p
-	 *            The plugin
-	 * @param id
-	 *            Plugin ID
+	 *
+	 * @param p  The plugin
+	 * @param id Plugin ID
 	 */
 	public Updater(Plugin p, int id) {
 		this(p);
@@ -90,19 +90,16 @@ public class Updater {
 
 	/**
 	 * Makes the updater for a plugin with an ID
-	 * 
-	 * @param p
-	 *            The plugin
-	 * @param id
-	 *            Plugin ID
-	 * @param download
-	 *            Set to true if your plugin needs to be immediately downloaded
-	 * @param skipTags
-	 *            Tags, endings of a filename, that updater will ignore
+	 *
+	 * @param p        The plugin
+	 * @param id       Plugin ID
+	 * @param download Set to true if your plugin needs to be immediately downloaded
+	 * @param skipTags Tags, endings of a filename, that updater will ignore
 	 */
 	public Updater(Plugin p, int id, boolean download, String... skipTags) {
 		this(p);
 		setID(id);
+		this.skipTags.addAll(Arrays.asList(skipTags));
 		if (download && (checkForUpdates() == UpdateAvailability.UPDATE_AVAILABLE)) {
 			update();
 		}
@@ -110,23 +107,18 @@ public class Updater {
 
 	/**
 	 * Makes the updater for a plugin with an ID
-	 * 
-	 * @param p
-	 *            The plugin
-	 * @param id
-	 *            Plugin ID
-	 * @param download
-	 *            Set to true if your plugin needs to be immediately downloaded
-	 * @param skipTags
-	 *            Tags, endings of a filename, that updater will ignore, or null for none
-	 * @param callbacks
-	 *            All update callbacks you need
+	 *
+	 * @param p         The plugin
+	 * @param id        Plugin ID
+	 * @param download  Set to true if your plugin needs to be immediately downloaded
+	 * @param skipTags  Tags, endings of a filename, that updater will ignore, or null for none
+	 * @param callbacks All update callbacks you need
 	 */
 	public Updater(Plugin p, int id, boolean download, String[] skipTags, UpdateCallback... callbacks) {
 		this(p);
 		setID(id);
 		this.callbacks.addAll(Arrays.asList(callbacks));
-		if(skipTags != null) {
+		if (skipTags != null) {
 			this.skipTags.addAll(Arrays.asList(skipTags));
 		}
 		if (download && (checkForUpdates() == UpdateAvailability.UPDATE_AVAILABLE)) {
@@ -136,7 +128,7 @@ public class Updater {
 
 	/**
 	 * Gets the plugin ID
-	 * 
+	 *
 	 * @return the plugin ID
 	 */
 	public int getID() {
@@ -145,9 +137,8 @@ public class Updater {
 
 	/**
 	 * Sets the plugin ID
-	 * 
-	 * @param id
-	 *            The plugin ID
+	 *
+	 * @param id The plugin ID
 	 */
 	public void setID(int id) {
 		this.id = id;
@@ -155,9 +146,8 @@ public class Updater {
 
 	/**
 	 * Adds a new callback
-	 * 
-	 * @param callback
-	 *            Callback to register
+	 *
+	 * @param callback Callback to register
 	 */
 	public void registerCallback(UpdateCallback callback) {
 		callbacks.add(callback);
@@ -165,9 +155,8 @@ public class Updater {
 
 	/**
 	 * Attempts a update
-	 * 
-	 * @throws IllegalStateException
-	 *             if the ID was not set
+	 *
+	 * @throws IllegalStateException if the ID was not set
 	 */
 	public void update() {
 		if (id == -1) {
@@ -185,11 +174,12 @@ public class Updater {
 		if (lastCheck == UpdateAvailability.UPDATE_AVAILABLE) {
 			new BukkitRunnable() {
 
-				@Override
-				public void run() {
+				@Override public void run() {
 					p.getLogger().info("Starting update of " + p.getName());
+					log("Updating " + p.getName() + "!");
 					lastUpdate = download();
 					p.getLogger().log(Level.INFO, "Update done! Result: " + lastUpdate);
+					log("Updated " + p.getName() + "! Result was: " + lastUpdate);
 					caller.call(callbacks, lastUpdate, updater);
 				}
 			}.runTaskAsynchronously(p);
@@ -201,7 +191,6 @@ public class Updater {
 			Files.copy(pluginFile.toPath(),
 					new File(BACKUP_DIR, "backup-" + System.currentTimeMillis() + "-" + p.getName() + ".jar").toPath(),
 					StandardCopyOption.REPLACE_EXISTING);
-			pluginFile.delete();
 			final File downloadTo = new File(pluginFile.getParentFile().getAbsolutePath() + "Updater" + File.separator,
 					downloadName);
 			downloadTo.getParentFile().mkdirs();
@@ -210,9 +199,9 @@ public class Updater {
 			String content = "";
 			if (!fileHash(downloadTo).equalsIgnoreCase(futuremd5)) {
 				try {
-					List<String> lines = Files.readAllLines(downloadTo.toPath());
-					if (lines.get(0) != null
-							&& lines.get(0).equals("<html><head><title>Object moved</title></head><body>")) {
+					List<String> lines = Files.readAllLines(downloadTo.toPath(), StandardCharsets.UTF_8);
+					if (lines.get(0) != null && lines.get(0)
+							.equals("<html><head><title>Object moved</title></head><body>")) {
 						for (String line : lines) {
 							content += line;
 						}
@@ -223,7 +212,7 @@ public class Updater {
 						return download();
 
 					}
-				} catch (MalformedInputException e) {
+				} catch (MalformedInputException ignored) {
 				}
 			}
 			if (downloadTo.getName().endsWith(".jar")) {
@@ -261,7 +250,7 @@ public class Updater {
 					try {
 						zipStream.close();
 						fileStream.close();
-					} catch (IOException e) {
+					} catch (IOException ignored) {
 					}
 				}
 			}
@@ -279,7 +268,7 @@ public class Updater {
 			if (zipFile != null) {
 				try {
 					zipFile.close();
-				} catch (IOException e) {
+				} catch (IOException ignored) {
 				}
 			}
 		}
@@ -287,12 +276,10 @@ public class Updater {
 
 	/**
 	 * Checks for new updates
-	 * 
-	 * @param force
-	 *            Discards the cached state in order to get a new one
+	 *
+	 * @param force Discards the cached state in order to get a new one
 	 * @return Is there any updates
-	 * @throws IllegalStateException
-	 *             If the plugin ID is not set
+	 * @throws IllegalStateException If the plugin ID is not set
 	 */
 	public UpdateAvailability checkForUpdates(boolean force) {
 		if (id == -1) {
@@ -308,7 +295,7 @@ public class Updater {
 				connection.addRequestProperty("User-Agent", AGENT);
 				connection.connect();
 				BufferedReader responseReader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-				StringBuffer responseBuffer = new StringBuffer();
+				StringBuilder responseBuffer = new StringBuilder();
 				String line;
 				while ((line = responseReader.readLine()) != null) {
 					responseBuffer.append(line);
@@ -319,21 +306,20 @@ public class Updater {
 				if (connection.getResponseCode() == 200) {
 
 					try {
-						boolean done = false;
 						String currentmd5 = fileHash(pluginFile);
 
-						while (!done) {
+						while (true) {
 							JSONParser parser = new JSONParser();
 							JSONArray json = (JSONArray) parser.parse(response);
 							if (json.size() - counter < 0) {
 								lastCheck = UpdateAvailability.NO_UPDATE;
-								done = true;
 								break;
 							}
 							JSONObject latest = (JSONObject) json.get(json.size() - counter);
 							futuremd5 = (String) latest.get("md5");
 							String channel = (String) latest.get("releaseType");
-							if (alloweledChannels.contains(Channel.matchChannel(channel.toUpperCase())) && !hasTag((String) latest.get("name"))) {
+							if (alloweledChannels.contains(Channel.matchChannel(channel.toUpperCase())) && !hasTag(
+									(String) latest.get("name"))) {
 								if (futuremd5.equalsIgnoreCase(currentmd5)) {
 									lastCheck = UpdateAvailability.NO_UPDATE;
 								} else {
@@ -341,7 +327,7 @@ public class Updater {
 									downloadURL = (String) latest.get("downloadUrl");
 									downloadName = (String) latest.get("fileName");
 								}
-								done = true;
+								break;
 							} else
 								counter++;
 						}
@@ -361,9 +347,19 @@ public class Updater {
 
 	}
 
+	private void log(String message) {
+		try {
+			Files.write(LOG_FILE.toPath(),
+					Arrays.asList("[" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()) + "] " + message),
+					StandardCharsets.UTF_8, StandardOpenOption.APPEND);
+		} catch (IOException e) {
+			p.getLogger().log(Level.SEVERE, "Could not log to " + LOG_FILE.getPath() + "!", e);
+		}
+	}
+
 	private boolean hasTag(String name) {
-		for(String tag : skipTags) {
-			if(name.toLowerCase().endsWith(tag.toLowerCase())) {
+		for (String tag : skipTags) {
+			if (name.toLowerCase().endsWith(tag.toLowerCase())) {
 				return true;
 			}
 		}
@@ -372,10 +368,9 @@ public class Updater {
 
 	/**
 	 * Checks for new updates, non forcing cache override
-	 * 
+	 *
 	 * @return Is there any updates
-	 * @throws IllegalStateException
-	 *             If the plugin ID is not set
+	 * @throws IllegalStateException If the plugin ID is not set
 	 */
 	public UpdateAvailability checkForUpdates() {
 		return checkForUpdates(false);
@@ -383,7 +378,7 @@ public class Updater {
 
 	/**
 	 * Checks did the update run successfully
-	 * 
+	 *
 	 * @return The update state
 	 */
 	public UpdateResult isUpdated() {
@@ -392,9 +387,8 @@ public class Updater {
 
 	/**
 	 * Sets alloweled channels, AKA release types
-	 * 
-	 * @param channels
-	 *            The alloweled channels
+	 *
+	 * @param channels The alloweled channels
 	 */
 	public void setChannels(Channel... channels) {
 		alloweledChannels.clear();
@@ -403,25 +397,23 @@ public class Updater {
 
 	/**
 	 * Shows the outcome of an update
-	 * 
-	 * @author Arsen
 	 *
+	 * @author Arsen
 	 */
-	public static enum UpdateResult {
-		UPDATE_SUCCEEDED, UPDATE_FAILED, NOT_UPDATED, UNKNOWN_FILE_TYPE, IOERROR;
+	public enum UpdateResult {
+		UPDATE_SUCCEEDED, NOT_UPDATED, UNKNOWN_FILE_TYPE, IOERROR
 	}
 
 	/**
 	 * Shows the outcome of an update check
-	 * 
-	 * @author Arsen
 	 *
+	 * @author Arsen
 	 */
-	public static enum UpdateAvailability {
-		UPDATE_AVAILABLE, NO_UPDATE, SM_UNREACHABLE, CANT_UNDERSTAND;
+	public enum UpdateAvailability {
+		UPDATE_AVAILABLE, NO_UPDATE, SM_UNREACHABLE, CANT_UNDERSTAND
 	}
 
-	public static enum Channel {
+	public enum Channel {
 		// @formatter:off
 		
 		RELEASE("release"),
@@ -432,13 +424,13 @@ public class Updater {
 
 		private String channel;
 
-		private Channel(String channel) {
+		Channel(String channel) {
 			this.channel = channel;
 		}
 
 		/**
 		 * Gets the channel value
-		 * 
+		 *
 		 * @return the channel value
 		 */
 		public String getChannel() {
@@ -447,9 +439,8 @@ public class Updater {
 
 		/**
 		 * Returns channel whose channel value matches the given string
-		 * 
-		 * @param channel
-		 *            The channel value
+		 *
+		 * @param channel The channel value
 		 * @return The Channel constant
 		 */
 		public static Channel matchChannel(String channel) {
@@ -464,9 +455,8 @@ public class Updater {
 
 	/**
 	 * Calculates files MD5 hash
-	 * 
-	 * @param file
-	 *            The file to digest
+	 *
+	 * @param file The file to digest
 	 * @return The MD5 hex or null, if the operation failed
 	 */
 	public String fileHash(File file) {
@@ -496,13 +486,12 @@ public class Updater {
 
 	/**
 	 * Called right after update is done
-	 * 
-	 * @author Arsen
 	 *
+	 * @author Arsen
 	 */
 	public interface UpdateCallback {
 
-		public void updated(UpdateResult updateResult, Updater updater);
+		void updated(UpdateResult updateResult, Updater updater);
 	}
 
 	private class SyncCallbackCaller extends BukkitRunnable {
@@ -516,7 +505,7 @@ public class Updater {
 			}
 		}
 
-		public void call(List<UpdateCallback> callbacks, UpdateResult updateResult, Updater updater) {
+		void call(List<UpdateCallback> callbacks, UpdateResult updateResult, Updater updater) {
 			this.callbacks = callbacks;
 			this.updateResult = updateResult;
 			this.updater = updater;
