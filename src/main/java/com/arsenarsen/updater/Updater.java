@@ -100,7 +100,7 @@ public class Updater {
 	 * @param skipTags
 	 *            Tags, endings of a filename, that updater will ignore
 	 */
-	public Updater(Plugin p, int id, boolean download, String... tags) {
+	public Updater(Plugin p, int id, boolean download, String... skipTags) {
 		this(p);
 		setID(id);
 		if (download && (checkForUpdates() == UpdateAvailability.UPDATE_AVAILABLE)) {
