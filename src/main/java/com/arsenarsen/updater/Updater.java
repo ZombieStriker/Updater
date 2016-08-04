@@ -61,6 +61,7 @@ public class Updater {
 	private List<Channel> alloweledChannels = Arrays.asList(Channel.values());
 	private List<UpdateCallback> callbacks = new ArrayList<>();
 	private SyncCallbackCaller caller = new SyncCallbackCaller();
+	private List<String> skipTags = new ArrayList<>();
 
 	/**
 	 * Makes the updater for a plugin
@@ -96,8 +97,10 @@ public class Updater {
 	 *            Plugin ID
 	 * @param download
 	 *            Set to true if your plugin needs to be immediately downloaded
+	 * @param skipTags
+	 *            Tags, endings of a filename, that updater will ignore
 	 */
-	public Updater(Plugin p, int id, boolean download) {
+	public Updater(Plugin p, int id, boolean download, String... tags) {
 		this(p);
 		setID(id);
 		if (download && (checkForUpdates() == UpdateAvailability.UPDATE_AVAILABLE)) {
@@ -114,13 +117,18 @@ public class Updater {
 	 *            Plugin ID
 	 * @param download
 	 *            Set to true if your plugin needs to be immediately downloaded
+	 * @param skipTags
+	 *            Tags, endings of a filename, that updater will ignore, or null for none
 	 * @param callbacks
 	 *            All update callbacks you need
 	 */
-	public Updater(Plugin p, int id, boolean download, UpdateCallback... callbacks) {
+	public Updater(Plugin p, int id, boolean download, String[] skipTags, UpdateCallback... callbacks) {
 		this(p);
 		setID(id);
 		this.callbacks.addAll(Arrays.asList(callbacks));
+		if(skipTags != null) {
+			this.skipTags.addAll(Arrays.asList(skipTags));
+		}
 		if (download && (checkForUpdates() == UpdateAvailability.UPDATE_AVAILABLE)) {
 			update();
 		}
@@ -318,7 +326,6 @@ public class Updater {
 							JSONParser parser = new JSONParser();
 							JSONArray json = (JSONArray) parser.parse(response);
 							if (json.size() - counter < 0) {
-								done = true;
 								lastCheck = UpdateAvailability.NO_UPDATE;
 								done = true;
 								break;
@@ -326,7 +333,7 @@ public class Updater {
 							JSONObject latest = (JSONObject) json.get(json.size() - counter);
 							futuremd5 = (String) latest.get("md5");
 							String channel = (String) latest.get("releaseType");
-							if (alloweledChannels.contains(Channel.matchChannel(channel.toUpperCase()))) {
+							if (alloweledChannels.contains(Channel.matchChannel(channel.toUpperCase())) && !hasTag((String) latest.get("name"))) {
 								if (futuremd5.equalsIgnoreCase(currentmd5)) {
 									lastCheck = UpdateAvailability.NO_UPDATE;
 								} else {
@@ -352,6 +359,15 @@ public class Updater {
 
 		return lastCheck;
 
+	}
+
+	private boolean hasTag(String name) {
+		for(String tag : skipTags) {
+			if(name.toLowerCase().endsWith(tag.toLowerCase())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -489,23 +505,23 @@ public class Updater {
 		public void updated(UpdateResult updateResult, Updater updater);
 	}
 
-	private class SyncCallbackCaller extends BukkitRunnable{
-		private List<UpdateCallback> callbacks; 
+	private class SyncCallbackCaller extends BukkitRunnable {
+		private List<UpdateCallback> callbacks;
 		private UpdateResult updateResult;
 		private Updater updater;
-		
+
 		public void run() {
 			for (UpdateCallback callback : callbacks) {
 				callback.updated(updateResult, updater);
 			}
 		}
-		
+
 		public void call(List<UpdateCallback> callbacks, UpdateResult updateResult, Updater updater) {
 			this.callbacks = callbacks;
 			this.updateResult = updateResult;
 			this.updater = updater;
 			runTask(updater.p);
 		}
-		
+
 	}
 }

@@ -24,7 +24,7 @@ For those who prefer Maven, use this snippet:
 <dependency>
 	<groupId>com.arsenarsen</groupId>
 	<artifactId>updater</artifactId>
-	<version>1.1.0-R0.1-SNAPSHOT</version>
+	<version>1.1.1-R0.1-SNAPSHOT</version>
 </dependency>
 ```
 
