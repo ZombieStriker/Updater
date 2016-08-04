@@ -35,3 +35,5 @@ If this updater is correctly used, it is fully policy compliant. What you need t
 Here is a quick summary of my license: https://tldrlegal.com/license/gnu-general-public-license-v3-(gpl-3)
 
 Good luck and happy updating!
+
+Related bukkit post found here: https://bukkit.org/threads/updater-by-arsenarsen.427824/
