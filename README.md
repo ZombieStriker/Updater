@@ -31,4 +31,7 @@ For those who prefer Maven, use this snippet:
 ## Policy
 If this updater is correctly used, it is fully policy compliant. What you need to do to make sure your project gets approved is provide a way to turn the updater off, and state that you use this updater. In the constructor you can replace download with ``getConfig().getBoolean("PaTh", dEfAuLt)``
 
+## License
+Here is a quick summary of my license: https://tldrlegal.com/license/gnu-general-public-license-v3-(gpl-3)
+
 Good luck and happy updating!

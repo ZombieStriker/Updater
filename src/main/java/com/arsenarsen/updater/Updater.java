@@ -37,7 +37,7 @@ public class Updater {
 	private static final String HOST = "https://api.curseforge.com";
 	private static final String QUERY = "/servermods/files?projectIds=";
 	private static final String AGENT = "Updater by ArsenArsen";
-	private static final File WORKING_DIR = new File("plugins" + File.separator + "Updater" + File.separator);
+	private static final File WORKING_DIR = new File("plugins" + File.separator + "AUpdater" + File.separator);
 	private static final File BACKUP_DIR = new File(WORKING_DIR, "backups" + File.separator);
 	private static final File LOG_FILE = new File(WORKING_DIR, "updater.log");
 	private static final char[] HEX_CHAR_ARRAY = "0123456789abcdef".toCharArray();
