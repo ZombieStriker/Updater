@@ -54,7 +54,7 @@ public class Updater {
 	private String downloadURL = null;
 	private String futuremd5;
 	private String downloadName;
-	private List<Channel> alloweledChannels = Arrays.asList(Channel.ALPHA, Channel.BETA, Channel.RELEASE);
+	private List<Channel> allowedChannels = Arrays.asList(Channel.ALPHA, Channel.BETA, Channel.RELEASE);
 	private List<UpdateCallback> callbacks = new ArrayList<>();
 	private SyncCallbackCaller caller = new SyncCallbackCaller();
 	private List<String> skipTags = new ArrayList<>();
@@ -341,7 +341,7 @@ public class Updater {
 							futuremd5 = (String) latest.get("md5");
 							String channel = (String) latest.get("releaseType");
 							String name = (String) latest.get("name");
-							if (alloweledChannels.contains(Channel.matchChannel(channel.toUpperCase())) && !hasTag(
+							if (allowedChannels.contains(Channel.matchChannel(channel.toUpperCase())) && !hasTag(
 									name)) {
 								String noTagName = name;
 								String oldVersion = p.getDescription().getVersion().replaceAll("-.*", "");
@@ -457,8 +457,8 @@ public class Updater {
 	 * @param channels The allowed channels
 	 */
 	public void setChannels(Channel... channels) {
-		alloweledChannels.clear();
-		alloweledChannels.addAll(Arrays.asList(channels));
+		allowedChannels.clear();
+		allowedChannels.addAll(Arrays.asList(channels));
 	}
 
 	/**
