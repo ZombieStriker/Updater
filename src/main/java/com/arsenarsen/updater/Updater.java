@@ -21,6 +21,7 @@ import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.logging.Level;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
@@ -41,6 +42,8 @@ public class Updater {
 	private static final File BACKUP_DIR = new File(WORKING_DIR, "backups" + File.separator);
 	private static final File LOG_FILE = new File(WORKING_DIR, "updater.log");
 	private static final char[] HEX_CHAR_ARRAY = "0123456789abcdef".toCharArray();
+	private static final Pattern NAME_MATCH = Pattern.compile(".*\\sv?[0-9.]*");
+	private static final String VERSION_SPLIT = "\\sv?";
 
 	private int id = -1;
 
@@ -51,7 +54,7 @@ public class Updater {
 	private String downloadURL = null;
 	private String futuremd5;
 	private String downloadName;
-	private List<Channel> alloweledChannels = Arrays.asList(Channel.values());
+	private List<Channel> alloweledChannels = Arrays.asList(Channel.ALPHA, Channel.BETA, Channel.RELEASE);
 	private List<UpdateCallback> callbacks = new ArrayList<>();
 	private SyncCallbackCaller caller = new SyncCallbackCaller();
 	private List<String> skipTags = new ArrayList<>();
@@ -94,12 +97,14 @@ public class Updater {
 	 * @param p        The plugin
 	 * @param id       Plugin ID
 	 * @param download Set to true if your plugin needs to be immediately downloaded
-	 * @param skipTags Tags, endings of a filename, that updater will ignore
+	 * @param skipTags Tags, endings of a filename, that updater will ignore, must begin with a dash ('-')
 	 */
 	public Updater(Plugin p, int id, boolean download, String... skipTags) {
 		this(p);
 		setID(id);
-		this.skipTags.addAll(Arrays.asList(skipTags));
+		for(String tag : skipTags)
+			if(tag.startsWith("-"))
+				this.skipTags.add(tag);
 		if (download && (checkForUpdates() == UpdateAvailability.UPDATE_AVAILABLE)) {
 			update();
 		}
@@ -119,7 +124,9 @@ public class Updater {
 		setID(id);
 		this.callbacks.addAll(Arrays.asList(callbacks));
 		if (skipTags != null) {
-			this.skipTags.addAll(Arrays.asList(skipTags));
+			for(String tag : skipTags)
+				if(tag.startsWith("-"))
+					this.skipTags.add(tag);
 		}
 		if (download && (checkForUpdates() == UpdateAvailability.UPDATE_AVAILABLE)) {
 			update();
@@ -179,7 +186,6 @@ public class Updater {
 					log("Updating " + p.getName() + "!");
 					lastUpdate = download();
 					p.getLogger().log(Level.INFO, "Update done! Result: " + lastUpdate);
-					log("Updated " + p.getName() + "! Result was: " + lastUpdate);
 					caller.call(callbacks, lastUpdate, updater);
 				}
 			}.runTaskAsynchronously(p);
@@ -220,7 +226,9 @@ public class Updater {
 				pluginFile.delete();
 				InputStream in = new FileInputStream(downloadTo);
 				OutputStream out = new FileOutputStream(pluginFile);
-				p.getLogger().info("Update done! Downloaded " + ByteStreams.copy(in, out) + " bytes!");
+				long bytes;
+				p.getLogger().info("Update done! Downloaded " + (bytes = ByteStreams.copy(in, out)) + " bytes!");
+				log("Updated plugin " + p.getName() + " with " + bytes + "bytes!");
 				in.close();
 				out.close();
 				return UpdateResult.UPDATE_SUCCEEDED;
@@ -228,8 +236,21 @@ public class Updater {
 				return unzip(downloadTo);
 		} catch (IOException e) {
 			p.getLogger().log(Level.SEVERE, "Couldn't download update for " + p.getName(), e);
+			log("Failed to update " + p.getName() + "!", e);
 			return UpdateResult.IOERROR;
 		}
+	}
+
+	private void log(String message, Exception exception) {
+		StringWriter string = new StringWriter();
+		PrintWriter print = new PrintWriter(string);
+		exception.printStackTrace(print);
+		log(message + " " + string.toString());
+		try {
+			string.close();
+		} catch (IOException ignored) {
+		}
+		print.close();
 	}
 
 	private UpdateResult unzip(File download) {
@@ -258,10 +279,12 @@ public class Updater {
 		} catch (IOException e) {
 			if (e instanceof ZipException) {
 				p.getLogger().log(Level.SEVERE, "Could not unzip downloaded file!", e);
+				log("Update for " + p.getName() + "was an unknown filetype! ", e);
 				return UpdateResult.UNKNOWN_FILE_TYPE;
 			} else {
 				p.getLogger().log(Level.SEVERE,
 						"An IOException occured while trying to update %s!".replace("%s", p.getName()), e);
+				log("Update for " + p.getName() + "was an unknown filetype! ", e);
 				return UpdateResult.IOERROR;
 			}
 		} finally {
@@ -277,7 +300,7 @@ public class Updater {
 	/**
 	 * Checks for new updates
 	 *
-	 * @param force Discards the cached state in order to get a new one
+	 * @param force Discards the cached state in order to get a new one, ignored if update check didn't run
 	 * @return Is there any updates
 	 * @throws IllegalStateException If the plugin ID is not set
 	 */
@@ -306,7 +329,6 @@ public class Updater {
 				if (connection.getResponseCode() == 200) {
 
 					try {
-						String currentmd5 = fileHash(pluginFile);
 
 						while (true) {
 							JSONParser parser = new JSONParser();
@@ -318,9 +340,50 @@ public class Updater {
 							JSONObject latest = (JSONObject) json.get(json.size() - counter);
 							futuremd5 = (String) latest.get("md5");
 							String channel = (String) latest.get("releaseType");
+							String name = (String) latest.get("name");
 							if (alloweledChannels.contains(Channel.matchChannel(channel.toUpperCase())) && !hasTag(
-									(String) latest.get("name"))) {
-								if (futuremd5.equalsIgnoreCase(currentmd5)) {
+									name)) {
+								String noTagName = name;
+								String oldVersion = p.getDescription().getVersion().replaceAll("-.*", "");
+								for(String tag : skipTags){
+									noTagName = noTagName.replace(tag, "");
+									oldVersion = oldVersion.replace(tag, "");
+								}
+								if(!NAME_MATCH.matcher(noTagName).matches()) {
+									lastCheck = UpdateAvailability.CANT_PARSE_NAME;
+									return lastCheck;
+								}
+								String[] splitName = noTagName.split(VERSION_SPLIT);
+								String version = splitName[splitName.length - 1];
+								if(oldVersion.length() > version.length()){
+									while(oldVersion.length() > version.length()){
+										version += ".0";
+									}
+								} else if(oldVersion.length() < version.length()){
+									while(oldVersion.length() < version.length()){
+										oldVersion += ".0";
+									}
+								}
+								String[] splitOldVersion = oldVersion.split("\\.");
+								String[] splitVersion = version.split("\\.");
+
+								Integer[] parsedOldVersion = new Integer[splitOldVersion.length];
+								Integer[] parsedVersion = new Integer[splitVersion.length];
+
+								for(int i = 0; i < parsedOldVersion.length; i++){
+									parsedOldVersion[i] = Integer.parseInt(splitOldVersion[i]);
+								}
+								for(int i = 0; i < parsedVersion.length; i++){
+									parsedVersion[i] = Integer.parseInt(splitVersion[i]);
+								}
+								boolean update = false;
+								for(int i = 0; i < parsedOldVersion.length; i++){
+									if(parsedOldVersion[i] < parsedVersion[i]) {
+										update = true;
+										break;
+									}
+								}
+								if (!update) {
 									lastCheck = UpdateAvailability.NO_UPDATE;
 								} else {
 									lastCheck = UpdateAvailability.UPDATE_AVAILABLE;
@@ -333,24 +396,27 @@ public class Updater {
 						}
 					} catch (ParseException e) {
 						p.getLogger().log(Level.SEVERE, "Could not parse API Response for " + target, e);
+						log("Could not parse API Response for " + target + " while updating " + p.getName(), e);
 						lastCheck = UpdateAvailability.CANT_UNDERSTAND;
 					}
-				} else
+				} else {
+					log("Could not reach API for " + target + " while updating " + p.getName());
 					lastCheck = UpdateAvailability.SM_UNREACHABLE;
+				}
 			} catch (IOException e) {
 				p.getLogger().log(Level.SEVERE, "Could not check for updates for plugin " + p.getName(), e);
+				log("Could not reach API for " + target + " while updating " + p.getName());
 				lastCheck = UpdateAvailability.SM_UNREACHABLE;
 			}
 		}
-
+		log("Update check ran for " + p.getName() + "! Check resulted in " + lastCheck);
 		return lastCheck;
-
 	}
 
 	private void log(String message) {
 		try {
-			Files.write(LOG_FILE.toPath(),
-					Arrays.asList("[" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()) + "] " + message),
+			Files.write(LOG_FILE.toPath(), Collections.singletonList(
+					"[" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()) + "] " + message),
 					StandardCharsets.UTF_8, StandardOpenOption.APPEND);
 		} catch (IOException e) {
 			p.getLogger().log(Level.SEVERE, "Could not log to " + LOG_FILE.getPath() + "!", e);
@@ -386,9 +452,9 @@ public class Updater {
 	}
 
 	/**
-	 * Sets alloweled channels, AKA release types
+	 * Sets allowed channels, AKA release types
 	 *
-	 * @param channels The alloweled channels
+	 * @param channels The allowed channels
 	 */
 	public void setChannels(Channel... channels) {
 		alloweledChannels.clear();
@@ -401,7 +467,25 @@ public class Updater {
 	 * @author Arsen
 	 */
 	public enum UpdateResult {
-		UPDATE_SUCCEEDED, NOT_UPDATED, UNKNOWN_FILE_TYPE, IOERROR
+		/**
+		 * Update was successful
+		 */
+		UPDATE_SUCCEEDED,
+
+		/**
+		 * Update was not attempted yet
+		 */
+		NOT_UPDATED,
+
+		/**
+		 * Could not unpack the update
+		 */
+		UNKNOWN_FILE_TYPE,
+
+		/**
+		 * An unknown IO error occurred
+		 */
+		IOERROR
 	}
 
 	/**
@@ -410,17 +494,47 @@ public class Updater {
 	 * @author Arsen
 	 */
 	public enum UpdateAvailability {
-		UPDATE_AVAILABLE, NO_UPDATE, SM_UNREACHABLE, CANT_UNDERSTAND
+		/**
+		 * There is an update
+		 */
+		UPDATE_AVAILABLE,
+
+		/**
+		 * You have the latest version
+		 */
+		NO_UPDATE,
+
+		/**
+		 * Could not reach server mods API
+		 */
+		SM_UNREACHABLE,
+
+		/**
+		 * Update name cannot be parsed, meaning the version cannot be compared
+		 */
+		CANT_PARSE_NAME,
+
+		/**
+		 * Could not parse response from server mods API
+		 */
+		CANT_UNDERSTAND
 	}
 
 	public enum Channel {
-		// @formatter:off
-		
+		/**
+		 * Normal release
+		 */
 		RELEASE("release"),
+
+		/**
+		 * Beta release
+		 */
 		BETA("beta"),
+
+		/**
+		 * Alpha release
+		 */
 		ALPHA("alpha");
-		
-		// @formatter:on
 
 		private String channel;
 
