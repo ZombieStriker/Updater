@@ -18,13 +18,13 @@ For those who prefer Maven, use this snippet:
 ...
 <repository>
 	<id>arsens-repo</id>
-	<url>http://repo-arsenarsen.rhcloud.com/content/repositories/snapshots/</url>
+	<url>https://repo.arsenarsen.com/content/repositories/snapshots/</url>
 </repository>
 ...
 <dependency>
 	<groupId>com.arsenarsen</groupId>
 	<artifactId>updater</artifactId>
-	<version>1.1.4-R0.1-SNAPSHOT</version>
+	<version>1.1.5-R0.1-SNAPSHOT</version>
 </dependency>
 ```
 

@@ -14,6 +14,7 @@ import org.json.simple.parser.ParseException;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -74,7 +75,12 @@ public class Updater {
      */
     public Updater(Plugin p) {
         this.p = p;
-        pluginFile = new File(p.getClass().getProtectionDomain().getCodeSource().getLocation().getPath());
+        try {
+            pluginFile = new File(URLDecoder.decode(p.getClass().getProtectionDomain().getCodeSource().getLocation().getPath(), "UTF-8"));
+        } catch (UnsupportedEncodingException e) {
+            debug(e.toString());
+            // Should not ever happen
+        }
         latest = p.getDescription().getVersion();
         if (!CONFIG_FILE.exists()) {
             try {
