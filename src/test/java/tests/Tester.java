@@ -31,7 +31,7 @@ public class Tester {
     private static Thread mainThread = Thread.currentThread();
 
     // RIP!
-    static Plugin testPlugin = new Plugin(){
+    static Plugin testPlugin = new Plugin() {
 
 
         @Override
@@ -158,7 +158,7 @@ public class Tester {
     public void testUpdaterWithNewVer() throws NoSuchFieldException, IllegalAccessException, InterruptedException, IOException {
         version.setLength(0);
         version.append("0.0.1");
-        Updater u = new Updater(testPlugin, 100736, false);
+        final Updater u = new Updater(testPlugin, 100736, false);
         Field file = u.getClass().getDeclaredField("pluginFile");
         file.setAccessible(true);
         File pfile = new File("plugins" + File.separatorChar + "testTarget.jar");
@@ -168,18 +168,19 @@ public class Tester {
         Field debug = u.getClass().getDeclaredField("debug");
         debug.setAccessible(true);
         debug.set(u, true);
+        final Updater.UpdateResult[] updateResult = new Updater.UpdateResult[1];
         u.registerCallback(new Updater.UpdateCallback() {
             @Override
-            public void updated(Updater.UpdateResult updateResult, Updater updater) {
+            public void updated(Updater.UpdateResult result, Updater updater) {
                 onHold.set(false);
-                Assert.assertEquals(Updater.UpdateResult.UPDATE_SUCCEEDED, updateResult);
+                updateResult[0] = result;
             }
         });
         u.update();
-        while(onHold.get()) {
+        while (onHold.get()) {
             Thread.sleep(1);
         }
-        Assert.assertEquals("2ee9ad1bda49345dda147442763fdcda", u.fileHash(pfile));
+        Assert.assertEquals(Updater.UpdateResult.UPDATE_SUCCEEDED, updateResult[0]);
     }
 
     @Test
