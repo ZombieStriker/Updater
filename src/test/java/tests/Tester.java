@@ -18,13 +18,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 /**
- * Basic updater test. Meh
- * <br>
- * Created by Arsen on 25.8.2016.
+ * Basic updater test. Meh. UGLY
  */
 public class Tester {
     public static StringBuilder version = new StringBuilder();
@@ -161,25 +160,24 @@ public class Tester {
         final Updater u = new Updater(testPlugin, 100736, false);
         Field file = u.getClass().getDeclaredField("pluginFile");
         file.setAccessible(true);
-        File pfile = new File("plugins" + File.separatorChar + "testTarget.jar");
+        File pfile = new File("plugins" + File.separatorChar + "test target.jar");
         pfile.delete();
         pfile.createNewFile();
         file.set(u, pfile);
         Field debug = u.getClass().getDeclaredField("debug");
         debug.setAccessible(true);
         debug.set(u, true);
+        final CountDownLatch latch = new CountDownLatch(1);
         final Updater.UpdateResult[] updateResult = new Updater.UpdateResult[1];
         u.registerCallback(new Updater.UpdateCallback() {
             @Override
             public void updated(Updater.UpdateResult result, Updater updater) {
-                onHold.set(false);
                 updateResult[0] = result;
+                latch.countDown();
             }
         });
         u.update();
-        while (onHold.get()) {
-            Thread.sleep(1);
-        }
+        latch.await();
         Assert.assertEquals(Updater.UpdateResult.UPDATE_SUCCEEDED, updateResult[0]);
     }
 
@@ -193,7 +191,7 @@ public class Tester {
         Updater u = new Updater(testPlugin, 100736, false);
         Field file = u.getClass().getDeclaredField("pluginFile");
         file.setAccessible(true);
-        File pfile = new File("plugins" + File.separatorChar + "testTarget.jar");
+        File pfile = new File("plugins" + File.separatorChar + "test target.jar");
         pfile.delete();
         pfile.createNewFile();
         file.set(u, pfile);

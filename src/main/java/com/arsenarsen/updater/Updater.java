@@ -1,6 +1,5 @@
 package com.arsenarsen.updater;
 
-import com.google.common.io.ByteStreams;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -15,7 +14,6 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLDecoder;
-import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
@@ -41,7 +39,7 @@ public class Updater {
 
     private static final String HOST = "https://api.curseforge.com";
     private static final String QUERY = "/servermods/files?projectIds=";
-    private static final String AGENT = "Updater by ArsenArsen";
+    private static final String AGENT = "Mozilla/5.0 Updater by ArsenArsen";
     private static final File WORKING_DIR = new File("plugins" + File.separator + "AUpdater" + File.separator);
     private static final File BACKUP_DIR = new File(WORKING_DIR, "backups" + File.separator);
     private static final File LOG_FILE = new File(WORKING_DIR, "updater.log");
@@ -213,7 +211,7 @@ public class Updater {
             BACKUP_DIR.mkdir();
         }
         final Updater updater = this;
-        if(!global.getBoolean("update", true)){
+        if (!global.getBoolean("update", true)) {
             lastUpdate = UpdateResult.DISABLED;
             debug("Disabled!");
             caller.call(callbacks, UpdateResult.DISABLED, updater);
@@ -248,52 +246,30 @@ public class Updater {
             Files.copy(pluginFile.toPath(),
                     new File(BACKUP_DIR, "backup-" + System.currentTimeMillis() + "-" + p.getName() + ".jar").toPath(),
                     StandardCopyOption.REPLACE_EXISTING);
-            final File downloadTo = new File(pluginFile.getParentFile().getAbsolutePath() + "Updater" + File.separator,
-                    downloadName);
+            final File downloadTo = new File(pluginFile.getParentFile().getAbsolutePath() +
+                    File.separator + "AUpdater" + File.separator, downloadName);
             downloadTo.getParentFile().mkdirs();
             downloadTo.delete();
             debug("Started download!");
-            Files.copy(new URL(downloadURL).openStream(), downloadTo.toPath());
-            debug("Ended download!");
-            String content = "";
-            if (!fileHash(downloadTo).equalsIgnoreCase(futuremd5)) {
-                try {
-                    List<String> lines = Files.readAllLines(downloadTo.toPath(), StandardCharsets.UTF_8);
-                    if (lines.get(0) != null && lines.get(0)
-                            .equals("<html><head><title>Object moved</title></head><body>")) {
-                        for (String line : lines) {
-                            content += line;
-                        }
-                        content = content.replace("\">here</a>.</h2></body></html>", "").replace(
-                                "<html><head><title>Object moved</title></head><body><h2>Object moved to <a href=\"",
-                                "");
-                        downloadURL = content;
-                        return download();
 
-                    }
-                } catch (MalformedInputException ignored) {
-                }
-            }
+            downloadIsSeperateBecauseGotoGotRemoved(downloadTo);
+
+            debug("Ended download!");
+            if (!fileHash(downloadTo).equalsIgnoreCase(futuremd5))
+                return UpdateResult.BAD_HASH;
             if (downloadTo.getName().endsWith(".jar")) {
                 pluginFile.setWritable(true, false);
                 pluginFile.delete();
                 debug("Started copy!");
                 InputStream in = new FileInputStream(downloadTo);
-                OutputStream out = new FileOutputStream(pluginFile);
-                long bytes = 0;
-                byte[] buf = new byte[0x1000];
-                while (true) {
-                    int r = in.read(buf);
-                    if (r == -1)
-                        break;
-                    out.write(buf, 0, r);
-                    bytes += r;
-                    debug("Another 4K, current: " + r);
-                }
+                File file = new File(pluginFile.getParentFile()
+                        .getAbsoluteFile() + File.separator + "update" + File.separator, pluginFile.getName());
+                file.getParentFile().mkdirs();
+                file.createNewFile();
+                OutputStream out = new FileOutputStream(file);
+                long bytes = copy(in, out);
                 p.getLogger().info("Update done! Downloaded " + bytes + " bytes!");
                 log("Updated plugin " + p.getName() + " with " + bytes + "bytes!");
-                in.close();
-                out.close();
                 return UpdateResult.UPDATE_SUCCEEDED;
             } else
                 return unzip(downloadTo);
@@ -304,6 +280,40 @@ public class Updater {
         }
     }
 
+    /**
+     * God damn it Gosling, <a href="http://stackoverflow.com/a/4547764/3809164">reference here.</a>
+     */
+    private void downloadIsSeperateBecauseGotoGotRemoved(File downloadTo) throws IOException {
+        URL url = new URL(downloadURL);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.addRequestProperty("User-Agent", AGENT);
+        connection.connect();
+        if (connection.getResponseCode() >= 300 && connection.getResponseCode() < 400) {
+            downloadURL = connection.getHeaderField("Location");
+            downloadIsSeperateBecauseGotoGotRemoved(downloadTo);
+        } else {
+            debug(connection.getResponseCode() + " " + connection.getResponseMessage() + " when requesting " + downloadURL);
+            copy(connection.getInputStream(), new FileOutputStream(downloadTo));
+        }
+    }
+
+    private long copy(InputStream in, OutputStream out) throws IOException {
+        long bytes = 0;
+        byte[] buf = new byte[0x1000];
+        while (true) {
+            int r = in.read(buf);
+            if (r == -1)
+                break;
+            out.write(buf, 0, r);
+            bytes += r;
+            debug("Another 4K, current: " + r);
+        }
+        out.flush();
+        out.close();
+        in.close();
+        return bytes;
+    }
+
 
     private UpdateResult unzip(File download) {
         ZipFile zipFile = null;
@@ -311,20 +321,19 @@ public class Updater {
             zipFile = new ZipFile(download);
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
             ZipEntry entry;
+            File updateFile = new File(pluginFile.getParentFile()
+                    .getAbsoluteFile() + File.separator + "update" + File.separator, pluginFile.getName());
             while ((entry = entries.nextElement()) != null) {
-                pluginFile.setWritable(true, false);
-                pluginFile.delete();
-                File target = new File(pluginFile.getParentFile(), entry.getName());
+                File target = new File(updateFile, entry.getName());
+                File inPlugins = new File(pluginFile.getParentFile(), entry.getName());
+                if(!inPlugins.exists()){
+                    target = inPlugins;
+                }
                 if (!entry.isDirectory()) {
                     target.getParentFile().mkdirs();
                     InputStream zipStream = zipFile.getInputStream(entry);
                     OutputStream fileStream = new FileOutputStream(target);
-                    ByteStreams.copy(zipStream, fileStream);
-                    try {
-                        zipStream.close();
-                        fileStream.close();
-                    } catch (IOException ignored) {
-                    }
+                    copy(zipStream, fileStream);
                 }
             }
             return UpdateResult.UPDATE_SUCCEEDED;
@@ -397,8 +406,8 @@ public class Updater {
                             futuremd5 = (String) latest.get("md5");
                             String channel = (String) latest.get("releaseType");
                             String name = (String) latest.get("name");
-                            if (allowedChannels.contains(Channel.matchChannel(channel.toUpperCase())) && !hasTag(
-                                    name)) {
+                            if (allowedChannels.contains(Channel.matchChannel(channel.toUpperCase()))
+                                    && !hasTag(name)) {
                                 String noTagName = name;
                                 String oldVersion = p.getDescription().getVersion().replaceAll("-.*", "");
                                 for (String tag : skipTags) {
@@ -575,7 +584,10 @@ public class Updater {
          * Updater is globally disabled
          */
         DISABLED,
-
+        /**
+         * The hashing algorithm and the remote hash had different results.
+         */
+        BAD_HASH,
         /**
          * An unknown IO error occurred
          */
@@ -717,7 +729,7 @@ public class Updater {
             this.callbacks = callbacks;
             this.updateResult = updateResult;
             this.updater = updater;
-            if(!Bukkit.getServer().isPrimaryThread())
+            if (!Bukkit.getServer().isPrimaryThread())
                 runTask(updater.p);
             else run();
         }

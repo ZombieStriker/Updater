@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.arsenarsen</groupId>
 	<artifactId>updater</artifactId>
-	<version>1.1.5-R0.1-SNAPSHOT</version>
+	<version>1.1.6-R0.1-SNAPSHOT</version>
 	<name>Updater</name>
 	<description>This is my own special updater, made for sake of having it.</description>
 	<distributionManagement>
