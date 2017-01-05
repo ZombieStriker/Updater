@@ -453,7 +453,7 @@ public class Updater {
                                     lastCheck = UpdateAvailability.NO_UPDATE;
                                 } else {
                                     lastCheck = UpdateAvailability.UPDATE_AVAILABLE;
-                                    downloadURL = (String) latest.get("downloadUrl");
+                                    downloadURL = ((String) latest.get("downloadUrl")).replace(" ", "%20");
                                     downloadName = (String) latest.get("fileName");
                                 }
                                 break;
