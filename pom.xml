@@ -9,7 +9,8 @@
 	<description>This is my own special updater, made for sake of having it.</description>
 	<distributionManagement>
 		<snapshotRepository>
-			<id>newNexus</id>
+            <id>repo.arsenarsen.com</id>
+            <name>repo.arsenarsen.com</name>
 			<url>https://repo.arsenarsen.com/content/repositories/snapshots</url>
 		</snapshotRepository>
 	</distributionManagement>
