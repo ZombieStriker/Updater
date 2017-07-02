@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.arsenarsen</groupId>
 	<artifactId>updater</artifactId>
-	<version>1.1.7-R0.1-SNAPSHOT</version>
+    <version>1.1.8-R0.1-SNAPSHOT</version>
 	<name>Updater</name>
 	<description>This is my own special updater, made for sake of having it.</description>
 	<distributionManagement>
@@ -61,8 +61,8 @@
 				<artifactId>maven-compiler-plugin</artifactId>
 				<version>3.3</version>
 				<configuration>
-					<source>1.7</source>
-					<target>1.7</target>
+                    <source>1.8</source>
+                    <target>1.8</target>
 				</configuration>
 			</plugin>
 			<plugin>
